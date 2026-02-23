@@ -7,3 +7,4 @@ pub mod profiles;
 pub mod series;
 pub mod sports;
 pub mod tags;
+pub mod wallet;

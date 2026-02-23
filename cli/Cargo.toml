@@ -9,11 +9,12 @@ name = "polymarket"
 path = "src/main.rs"
 
 [dependencies]
-polymarket-client-sdk = { path = "../rs-clob-client", features = ["gamma", "data", "bridge"] }
+polymarket-client-sdk = { path = "../rs-clob-client", features = ["gamma", "data", "bridge", "clob"] }
 clap = { version = "4", features = ["derive"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 serde_json = "1"
+serde = { version = "1", features = ["derive"] }
 tabled = "0.17"
 rust_decimal = "1"
-serde = "1"
 anyhow = "1"
+dirs = "6"

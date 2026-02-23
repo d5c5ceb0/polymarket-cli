@@ -1,6 +1,8 @@
 #![allow(clippy::items_after_statements)]
 
+mod auth;
 mod commands;
+mod config;
 mod output;
 
 use std::process::ExitCode;
@@ -18,6 +20,10 @@ struct Cli {
     /// Output format: table or json
     #[arg(long, global = true, default_value = "table")]
     output: OutputFormat,
+
+    /// Private key for wallet authentication (overrides env var and config file)
+    #[arg(long, global = true)]
+    private_key: Option<String>,
 }
 
 #[derive(Subcommand)]
@@ -40,6 +46,8 @@ enum Commands {
     Data(commands::data::DataArgs),
     /// Bridge assets from other chains to Polymarket
     Bridge(commands::bridge::BridgeArgs),
+    /// Manage wallet and authentication
+    Wallet(commands::wallet::WalletArgs),
     /// Check API health status
     Status,
 }
@@ -79,6 +87,7 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
         Commands::Sports(args) => commands::sports::execute(&gamma_client, args, cli.output).await,
         Commands::Data(args) => commands::data::execute(&data_client, args, cli.output).await,
         Commands::Bridge(args) => commands::bridge::execute(&bridge_client, args, cli.output).await,
+        Commands::Wallet(args) => commands::wallet::execute(args, cli.output, cli.private_key.as_deref()),
         Commands::Status => {
             let status = gamma_client.status().await?;
             match cli.output {
