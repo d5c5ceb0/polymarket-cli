@@ -91,6 +91,8 @@ jobs:
         with:
           ref: main
 
+      - uses: dtolnay/rust-toolchain@stable
+
       - name: Update Homebrew formula
         run: scripts/update-formula.sh ${{ github.ref_name }}
 
