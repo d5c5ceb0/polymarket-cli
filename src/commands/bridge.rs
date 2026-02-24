@@ -53,6 +53,7 @@ pub async fn execute(
         }
 
         BridgeCommand::Status { address } => {
+            anyhow::ensure!(!address.trim().is_empty(), "Address cannot be empty");
             let request = StatusRequest::builder().address(&address).build();
 
             let response = client.status(&request).await?;

@@ -7,12 +7,13 @@ use polymarket_client_sdk::ctf::types::{
 };
 use polymarket_client_sdk::types::{Address, B256};
 use polymarket_client_sdk::{POLYGON, ctf};
+use rust_decimal::Decimal;
 
 use crate::auth;
 use crate::output::OutputFormat;
 use crate::output::ctf as ctf_output;
 
-const USDC_DECIMALS: u64 = 1_000_000;
+const USDC_DECIMALS: Decimal = Decimal::from_parts(1_000_000, 0, 0, false, 0);
 
 #[derive(Args)]
 pub struct CtfArgs {
@@ -29,7 +30,7 @@ pub enum CtfCommand {
         condition: String,
         /// Amount in USDC (e.g. 10 for $10)
         #[arg(long)]
-        amount: f64,
+        amount: String,
         /// Collateral token address (defaults to USDC)
         #[arg(long, default_value = "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174")]
         collateral: String,
@@ -47,7 +48,7 @@ pub enum CtfCommand {
         condition: String,
         /// Amount in USDC (e.g. 10 for $10)
         #[arg(long)]
-        amount: f64,
+        amount: String,
         /// Collateral token address (defaults to USDC)
         #[arg(long, default_value = "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174")]
         collateral: String,
@@ -117,22 +118,36 @@ pub enum CtfCommand {
     },
 }
 
-fn parse_usdc_amount(amount: f64) -> Result<U256> {
-    anyhow::ensure!(amount > 0.0, "Amount must be positive");
-    let raw = (amount * USDC_DECIMALS as f64) as u64;
-    Ok(U256::from(raw))
+fn usdc_to_raw(val: Decimal) -> Result<U256> {
+    let raw = val * USDC_DECIMALS;
+    anyhow::ensure!(
+        raw.fract().is_zero(),
+        "Amount {val} exceeds USDC precision (max 6 decimal places)"
+    );
+    let raw_u64: u64 = raw
+        .try_into()
+        .map_err(|_| anyhow::anyhow!("Amount too large: {val}"))?;
+    Ok(U256::from(raw_u64))
+}
+
+fn parse_usdc_amount(s: &str) -> Result<U256> {
+    let val: Decimal = s
+        .trim()
+        .parse()
+        .context(format!("Invalid amount: {s}"))?;
+    anyhow::ensure!(val > Decimal::ZERO, "Amount must be positive");
+    usdc_to_raw(val)
 }
 
 fn parse_usdc_amounts(s: &str) -> Result<Vec<U256>> {
     s.split(',')
         .map(|part| {
             let trimmed = part.trim();
-            let val: f64 = trimmed
+            let val: Decimal = trimmed
                 .parse()
                 .context(format!("Invalid amount: {trimmed}"))?;
-            anyhow::ensure!(val >= 0.0, "Amount must be non-negative: {trimmed}");
-            let raw = (val * USDC_DECIMALS as f64) as u64;
-            Ok(U256::from(raw))
+            anyhow::ensure!(val >= Decimal::ZERO, "Amount must be non-negative: {trimmed}");
+            usdc_to_raw(val)
         })
         .collect()
 }
@@ -182,7 +197,7 @@ pub async fn execute(
             parent_collection,
         } => {
             let condition_id = super::parse_condition_id(&condition)?;
-            let usdc_amount = parse_usdc_amount(amount)?;
+            let usdc_amount = parse_usdc_amount(&amount)?;
             let collateral_addr = resolve_collateral(&collateral)?;
             let parent = parse_optional_parent(parent_collection.as_deref())?;
             let partition = match partition {
@@ -221,7 +236,7 @@ pub async fn execute(
             parent_collection,
         } => {
             let condition_id = super::parse_condition_id(&condition)?;
-            let usdc_amount = parse_usdc_amount(amount)?;
+            let usdc_amount = parse_usdc_amount(&amount)?;
             let collateral_addr = resolve_collateral(&collateral)?;
             let parent = parse_optional_parent(parent_collection.as_deref())?;
             let partition = match partition {
@@ -382,30 +397,47 @@ mod tests {
 
     #[test]
     fn parse_usdc_amount_whole_dollars() {
-        let result = parse_usdc_amount(10.0).unwrap();
+        let result = parse_usdc_amount("10").unwrap();
         assert_eq!(result, U256::from(10_000_000u64));
     }
 
     #[test]
     fn parse_usdc_amount_fractional() {
-        let result = parse_usdc_amount(1.5).unwrap();
+        let result = parse_usdc_amount("1.5").unwrap();
         assert_eq!(result, U256::from(1_500_000u64));
     }
 
     #[test]
     fn parse_usdc_amount_small() {
-        let result = parse_usdc_amount(0.01).unwrap();
+        let result = parse_usdc_amount("0.01").unwrap();
         assert_eq!(result, U256::from(10_000u64));
     }
 
     #[test]
+    fn parse_usdc_amount_smallest_unit() {
+        let result = parse_usdc_amount("0.000001").unwrap();
+        assert_eq!(result, U256::from(1u64));
+    }
+
+    #[test]
+    fn parse_usdc_amount_rejects_excess_precision() {
+        let err = parse_usdc_amount("1.0000001").unwrap_err().to_string();
+        assert!(err.contains("precision"), "got: {err}");
+    }
+
+    #[test]
     fn parse_usdc_amount_rejects_zero() {
-        assert!(parse_usdc_amount(0.0).is_err());
+        assert!(parse_usdc_amount("0").is_err());
     }
 
     #[test]
     fn parse_usdc_amount_rejects_negative() {
-        assert!(parse_usdc_amount(-5.0).is_err());
+        assert!(parse_usdc_amount("-5").is_err());
+    }
+
+    #[test]
+    fn parse_usdc_amount_rejects_non_numeric() {
+        assert!(parse_usdc_amount("abc").is_err());
     }
 
     #[test]
